@@ -109,15 +109,15 @@ export function JoinGroupInput() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="px-6 py-3 border-2 border-primary-blue text-primary-blue rounded-xl hover:bg-primary-blue/10 transition-all font-bold"
+        className="w-full sm:w-auto px-6 py-3 border-2 border-primary-blue text-primary-blue rounded-xl hover:bg-primary-blue/10 transition-all font-bold text-sm sm:text-base"
       >
         Join Group
       </button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-card border-2 border-border rounded-2xl p-8 w-full max-w-md shadow-glow-primary">
-            <h2 className="text-3xl font-bold gradient-text mb-6">Join Group</h2>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4">
+          <div className="bg-card border-2 border-border rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-glow-primary">
+            <h2 className="text-2xl sm:text-3xl font-bold gradient-text mb-4 sm:mb-6">Join Group</h2>
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">

@@ -13,17 +13,26 @@ export default async function DashboardPage() {
     .order('created_at', { ascending: false })
 
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="flex items-center justify-between mb-8">
-        <div>
-          <h1 className="text-4xl font-bold gradient-text">My Groups</h1>
-          <p className="text-gray-300 mt-2">Welcome, {user?.email}!</p>
+    <div className="container mx-auto py-6 sm:py-8 px-4">
+      <div className="mb-6 sm:mb-8">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-2xl sm:text-3xl lg:text-4xl font-bold gradient-text">My Groups</h1>
+            <p className="text-gray-300 mt-1 sm:mt-2 text-sm sm:text-base truncate">Welcome, {user?.email}!</p>
+          </div>
         </div>
-        <div className="flex gap-3">
-          <JoinGroupInput />
-          <CreateGroupDialog />
+
+        {/* Action buttons - prominent on mobile */}
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="flex-1 sm:flex-initial">
+            <JoinGroupInput />
+          </div>
+          <div className="flex-1 sm:flex-initial">
+            <CreateGroupDialog />
+          </div>
         </div>
       </div>
+
       <GroupList groups={groups || []} />
     </div>
   )

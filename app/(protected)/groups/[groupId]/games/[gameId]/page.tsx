@@ -2,6 +2,7 @@ import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { notFound } from 'next/navigation'
 import { GameBoard } from '@/components/board/GameBoard'
 import { ScoreBoard } from '@/components/games/ScoreBoard'
+import { AdminControls } from '@/components/games/AdminControls'
 import Link from 'next/link'
 
 export default async function GamePage({
@@ -31,23 +32,6 @@ export default async function GamePage({
 
   const isCreator = game.created_by === user?.id
 
-  async function handleOpenGame() {
-    'use server'
-    const supabase = await createServerSupabaseClient()
-    await supabase
-      .from('games')
-      .update({ status: 'open' })
-      .eq('id', gameId)
-  }
-
-  async function handleRandomizeNumbers() {
-    'use server'
-    const supabase = await createServerSupabaseClient()
-    await supabase.rpc('randomize_game_numbers', {
-      p_game_id: gameId,
-    })
-  }
-
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="mb-8">
@@ -69,28 +53,7 @@ export default async function GamePage({
         </div>
 
         {isCreator && (
-          <div className="mt-6 flex gap-3">
-            {game.status === 'setup' && (
-              <form action={handleOpenGame}>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-gradient-primary text-black rounded-xl hover:shadow-glow-primary transition-all font-bold"
-                >
-                  Open for Selection
-                </button>
-              </form>
-            )}
-            {game.status === 'open' && (
-              <form action={handleRandomizeNumbers}>
-                <button
-                  type="submit"
-                  className="px-6 py-3 bg-primary-blue text-white rounded-xl hover:shadow-glow-blue transition-all font-bold"
-                >
-                  Randomize Numbers & Lock
-                </button>
-              </form>
-            )}
-          </div>
+          <AdminControls gameId={gameId} groupId={groupId} gameStatus={game.status} />
         )}
       </div>
 
@@ -102,6 +65,7 @@ export default async function GamePage({
               userId={user.id}
               userEmail={user.email || ''}
               userName={profile?.full_name || undefined}
+              initialGame={game as any}
             />
           )}
         </div>

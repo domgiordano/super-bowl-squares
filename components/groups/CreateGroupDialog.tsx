@@ -22,14 +22,27 @@ export function CreateGroupDialog() {
     setLoading(true)
     setError('')
 
+    // Validate payout percentages
+    const q1 = parseFloat(payoutQ1) || 0
+    const q2 = parseFloat(payoutQ2) || 0
+    const q3 = parseFloat(payoutQ3) || 0
+    const final = parseFloat(payoutFinal) || 0
+    const total = q1 + q2 + q3 + final
+
+    if (Math.abs(total - 100) > 0.01) {
+      setError(`Payout percentages must add up to 100% (currently ${total.toFixed(1)}%)`)
+      setLoading(false)
+      return
+    }
+
     const result = await createGroupAction({
       name,
       description: description || undefined,
       buyInAmount: parseFloat(buyInAmount) || 0,
-      payoutQ1: parseFloat(payoutQ1) || 25,
-      payoutQ2: parseFloat(payoutQ2) || 25,
-      payoutQ3: parseFloat(payoutQ3) || 25,
-      payoutFinal: parseFloat(payoutFinal) || 25,
+      payoutQ1: q1,
+      payoutQ2: q2,
+      payoutQ3: q3,
+      payoutFinal: final,
     })
 
     if (!result.success) {
@@ -54,15 +67,15 @@ export function CreateGroupDialog() {
     <>
       <button
         onClick={() => setOpen(true)}
-        className="px-6 py-3 bg-gradient-primary text-black rounded-xl hover:shadow-glow-primary transition-all font-bold transform hover:scale-105"
+        className="w-full sm:w-auto px-6 py-3 bg-gradient-primary text-black rounded-xl hover:shadow-glow-primary transition-all font-bold active:scale-[0.98] sm:hover:scale-105 text-sm sm:text-base"
       >
         Create Group
       </button>
 
       {open && (
-        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="bg-card border-2 border-border rounded-2xl p-8 w-full max-w-md shadow-glow-primary">
-            <h2 className="text-3xl font-bold gradient-text mb-6">Create New Group</h2>
+        <div className="fixed inset-0 bg-black/80 backdrop-blur-sm flex items-center justify-center z-50 p-4 overflow-y-auto">
+          <div className="bg-card border-2 border-border rounded-2xl p-6 sm:p-8 w-full max-w-md shadow-glow-primary my-8">
+            <h2 className="text-2xl sm:text-3xl font-bold gradient-text mb-4 sm:mb-6">Create New Group</h2>
 
             {error && (
               <div className="mb-4 p-3 bg-red-500/10 border border-red-500/50 rounded-lg text-red-400 text-sm">
@@ -112,6 +125,20 @@ export function CreateGroupDialog() {
                   placeholder="10.00"
                   className="w-full px-4 py-3 bg-black border-2 border-border rounded-lg focus:outline-none focus:border-primary-green text-white placeholder-gray-500 transition-colors"
                 />
+              </div>
+              <div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-300">
+                    Payout Distribution
+                  </label>
+                  <span className={`text-sm font-bold ${
+                    Math.abs((parseFloat(payoutQ1) || 0) + (parseFloat(payoutQ2) || 0) + (parseFloat(payoutQ3) || 0) + (parseFloat(payoutFinal) || 0) - 100) < 0.01
+                      ? 'text-primary-green'
+                      : 'text-red-400'
+                  }`}>
+                    Total: {((parseFloat(payoutQ1) || 0) + (parseFloat(payoutQ2) || 0) + (parseFloat(payoutQ3) || 0) + (parseFloat(payoutFinal) || 0)).toFixed(0)}%
+                  </span>
+                </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>

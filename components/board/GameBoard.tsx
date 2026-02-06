@@ -7,6 +7,7 @@ import { NumberRow } from './NumberRow'
 import { PresenceIndicator } from './PresenceIndicator'
 import { useRealtimeSquares } from '@/lib/hooks/useRealtime'
 import { useRealtimeGame } from '@/lib/hooks/useRealtimeGame'
+import { claimSquareAction } from '@/app/actions/squares'
 // import { usePresence } from '@/lib/hooks/usePresence'
 import { Database } from '@/types/database.types'
 
@@ -32,11 +33,12 @@ interface GameBoardProps {
   userId: string
   userEmail: string
   userName?: string
+  initialGame?: GameData
 }
 
-export function GameBoard({ gameId, userId, userEmail, userName }: GameBoardProps) {
+export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: GameBoardProps) {
   const [squares, setSquares] = useState<SquareData[]>([])
-  const [game, setGame] = useState<GameData | null>(null)
+  const [game, setGame] = useState<GameData | null>(initialGame || null)
   const [quarterWinners, setQuarterWinners] = useState<QuarterWinner[]>([])
   const [loading, setLoading] = useState(true)
   const supabase = createClient()
@@ -70,6 +72,13 @@ export function GameBoard({ gameId, userId, userEmail, userName }: GameBoardProp
     fetchData()
   }, [fetchData])
 
+  // Update game state when initialGame prop changes (after router.refresh)
+  useEffect(() => {
+    if (initialGame) {
+      setGame(initialGame)
+    }
+  }, [initialGame])
+
   // Real-time updates
   useRealtimeSquares(gameId, fetchData)
   useRealtimeGame(gameId, fetchData) // Also listen for game score updates
@@ -95,18 +104,17 @@ export function GameBoard({ gameId, userId, userEmail, userName }: GameBoardProp
         : sq
     ))
 
-    // Call claim function
-    const { data, error } = await supabase.rpc('claim_square', {
-      p_square_id: squareId,
-      p_user_id: userId,
-      p_game_id: gameId,
-      p_expected_version: currentVersion,
+    // Call claim function via server action
+    const result = await claimSquareAction({
+      squareId,
+      gameId,
+      expectedVersion: currentVersion,
     })
 
-    if (error || !data?.[0]?.success) {
+    if (!result.success) {
       // Revert optimistic update
       await fetchData()
-      alert(data?.[0]?.message || 'Failed to claim square')
+      alert(result.message || 'Failed to claim square')
       return
     }
   }
@@ -148,49 +156,51 @@ export function GameBoard({ gameId, userId, userEmail, userName }: GameBoardProp
     <div className="space-y-6">
       <PresenceIndicator users={onlineUsers} />
 
-      <div className="inline-block border-2 border-primary-green/30 rounded-xl overflow-hidden shadow-card-glow">
-        {/* Top numbers */}
-        <div className="flex">
-          <div className="w-14 h-14 bg-card border border-border" />
-          <NumberRow numbers={game?.away_numbers || null} teamName={game?.away_team} />
-        </div>
-
-        {/* Grid with side numbers */}
-        {Array.from({ length: 10 }).map((_, row) => (
-          <div key={row} className="flex">
-            {/* Side number */}
-            <div className="w-14 h-14 flex items-center justify-center bg-card text-primary-green font-bold border border-border text-lg">
-              {game?.home_numbers?.[row] ?? '?'}
-            </div>
-
-            {/* Row of squares */}
-            {Array.from({ length: 10 }).map((_, col) => {
-              const square = squares.find(s => s.row === row && s.col === col)
-              if (!square) return null
-
-              const wonQuarters = quarterWinners
-                .filter(w => w.square_id === square.id)
-                .map(w => w.quarter)
-              const isCurrent = currentWinningSquareId === square.id
-
-              return (
-                <Square
-                  key={square.id}
-                  square={square}
-                  onClick={() => handleSquareClick(square.id, row, col, square.version)}
-                  isOwner={square.user_id === userId}
-                  canClaim={!square.user_id && game?.status === 'open'}
-                  wonQuarters={wonQuarters}
-                  isCurrentWinner={isCurrent}
-                />
-              )
-            })}
+      <div className="overflow-x-auto">
+        <div className="inline-block border-2 border-primary-green/30 rounded-xl overflow-hidden shadow-card-glow min-w-min">
+          {/* Top numbers */}
+          <div className="flex">
+            <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 bg-card border border-border" />
+            <NumberRow numbers={game?.away_numbers || null} teamName={game?.away_team} />
           </div>
-        ))}
+
+          {/* Grid with side numbers */}
+          {Array.from({ length: 10 }).map((_, row) => (
+            <div key={row} className="flex">
+              {/* Side number */}
+              <div className="w-10 h-10 sm:w-12 sm:h-12 md:w-14 md:h-14 flex items-center justify-center bg-card text-primary-green font-bold border border-border text-sm sm:text-base md:text-lg">
+                {game?.home_numbers?.[row] ?? '?'}
+              </div>
+
+              {/* Row of squares */}
+              {Array.from({ length: 10 }).map((_, col) => {
+                const square = squares.find(s => s.row === row && s.col === col)
+                if (!square) return null
+
+                const wonQuarters = quarterWinners
+                  .filter(w => w.square_id === square.id)
+                  .map(w => w.quarter)
+                const isCurrent = currentWinningSquareId === square.id
+
+                return (
+                  <Square
+                    key={square.id}
+                    square={square}
+                    onClick={() => handleSquareClick(square.id, row, col, square.version)}
+                    isOwner={square.user_id === userId}
+                    canClaim={!square.user_id && game?.status === 'open'}
+                    wonQuarters={wonQuarters}
+                    isCurrentWinner={isCurrent}
+                  />
+                )
+              })}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Team labels */}
-      <div className="flex items-center gap-8 text-sm">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-8 text-sm">
         <div className="text-gray-300">
           <span className="font-medium text-primary-green">↓ Vertical:</span> {game?.home_team}
         </div>
