@@ -81,7 +81,6 @@ export async function unclaimSquareAction(params: {
     .update({
       user_id: null,
       version: (square as any).version + 1,
-      updated_at: new Date().toISOString(),
     })
     .eq('id', params.squareId)
 
