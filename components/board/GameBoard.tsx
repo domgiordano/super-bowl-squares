@@ -7,7 +7,7 @@ import { NumberRow } from './NumberRow'
 import { PresenceIndicator } from './PresenceIndicator'
 import { useRealtimeSquares } from '@/lib/hooks/useRealtime'
 import { useRealtimeGame } from '@/lib/hooks/useRealtimeGame'
-import { claimSquareAction } from '@/app/actions/squares'
+import { claimSquareAction, unclaimSquareAction } from '@/app/actions/squares'
 // import { usePresence } from '@/lib/hooks/usePresence'
 import { Database } from '@/types/database.types'
 
@@ -91,31 +91,54 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
   // })
   const onlineUsers: any[] = []
 
-  async function handleSquareClick(squareId: string, row: number, col: number, currentVersion: number) {
+  async function handleSquareClick(squareId: string, row: number, col: number, currentVersion: number, isOwner: boolean) {
     if (game?.status !== 'open') {
       alert('Game is not open for square selection')
       return
     }
 
-    // Optimistic update
-    setSquares(prev => prev.map(sq =>
-      sq.id === squareId
-        ? { ...sq, user_id: userId, profiles: { full_name: userName || null, email: userEmail } }
-        : sq
-    ))
+    // Check if user is unclaiming their own square
+    if (isOwner) {
+      // Optimistic update - unclaim
+      setSquares(prev => prev.map(sq =>
+        sq.id === squareId
+          ? { ...sq, user_id: null, profiles: null }
+          : sq
+      ))
 
-    // Call claim function via server action
-    const result = await claimSquareAction({
-      squareId,
-      gameId,
-      expectedVersion: currentVersion,
-    })
+      // Call unclaim function
+      const result = await unclaimSquareAction({
+        squareId,
+        gameId,
+      })
 
-    if (!result.success) {
-      // Revert optimistic update
-      await fetchData()
-      alert(result.message || 'Failed to claim square')
-      return
+      if (!result.success) {
+        // Revert optimistic update
+        await fetchData()
+        alert(result.message || 'Failed to unclaim square')
+        return
+      }
+    } else {
+      // Optimistic update - claim
+      setSquares(prev => prev.map(sq =>
+        sq.id === squareId
+          ? { ...sq, user_id: userId, profiles: { full_name: userName || null, email: userEmail } }
+          : sq
+      ))
+
+      // Call claim function via server action
+      const result = await claimSquareAction({
+        squareId,
+        gameId,
+        expectedVersion: currentVersion,
+      })
+
+      if (!result.success) {
+        // Revert optimistic update
+        await fetchData()
+        alert(result.message || 'Failed to claim square')
+        return
+      }
     }
   }
 
@@ -181,14 +204,15 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
                   .filter(w => w.square_id === square.id)
                   .map(w => w.quarter)
                 const isCurrent = currentWinningSquareId === square.id
+                const isOwner = square.user_id === userId
 
                 return (
                   <Square
                     key={square.id}
                     square={square}
-                    onClick={() => handleSquareClick(square.id, row, col, square.version)}
-                    isOwner={square.user_id === userId}
-                    canClaim={!square.user_id && game?.status === 'open'}
+                    onClick={() => handleSquareClick(square.id, row, col, square.version, isOwner)}
+                    isOwner={isOwner}
+                    canClaim={((!square.user_id || isOwner) && game?.status === 'open')}
                     wonQuarters={wonQuarters}
                     isCurrentWinner={isCurrent}
                   />
