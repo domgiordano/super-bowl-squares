@@ -64,14 +64,18 @@ export async function unclaimSquareAction(params: {
     return { success: false, message: 'Game is not open for unclaiming' }
   }
 
-  // Verify the user owns this square
+  // Verify the user owns this square and get current version
   const { data: square } = await adminClient
     .from('squares')
-    .select('user_id')
+    .select('user_id, version')
     .eq('id', params.squareId)
     .single()
 
-  if (square?.user_id !== user.id) {
+  if (!square) {
+    return { success: false, message: 'Square not found' }
+  }
+
+  if (square.user_id !== user.id) {
     return { success: false, message: 'You do not own this square' }
   }
 
@@ -80,7 +84,7 @@ export async function unclaimSquareAction(params: {
     .from('squares')
     .update({
       user_id: null,
-      version: (square as any).version + 1,
+      version: square.version + 1,
     })
     .eq('id', params.squareId)
 
