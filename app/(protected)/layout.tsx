@@ -1,6 +1,7 @@
 import { createServerSupabaseClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { Logo } from '@/components/ui/Logo'
+import { Footer } from '@/components/layout/Footer'
 import Link from 'next/link'
 import { Home } from 'lucide-react'
 
@@ -17,7 +18,7 @@ export default async function ProtectedLayout({
   }
 
   return (
-    <div className="min-h-screen bg-black">
+    <div className="min-h-screen bg-black flex flex-col">
       <nav className="bg-card border-b-2 border-border shadow-glow-primary">
         <div className="container mx-auto px-4 py-4 flex justify-between items-center">
           <Logo />
@@ -38,7 +39,10 @@ export default async function ProtectedLayout({
           </div>
         </div>
       </nav>
-      {children}
+      <main className="flex-1">
+        {children}
+      </main>
+      <Footer />
     </div>
   )
 }
