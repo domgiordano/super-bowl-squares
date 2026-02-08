@@ -30,7 +30,22 @@ export default async function GamePage({
     .eq('id', user?.id)
     .single()
 
+  // Check if user is admin of the group
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('role')
+    .eq('group_id', groupId)
+    .eq('user_id', user?.id)
+    .single()
+
+  const isAdmin = membership?.role === 'admin'
   const isCreator = game.created_by === user?.id
+
+  // Fetch group members for admin square assignment
+  const { data: members } = await supabase
+    .from('group_members')
+    .select('*, profiles(*)')
+    .eq('group_id', groupId)
 
   return (
     <div className="container mx-auto py-8 px-4">
@@ -53,7 +68,15 @@ export default async function GamePage({
         </div>
 
         {isCreator && (
-          <AdminControls gameId={gameId} groupId={groupId} gameStatus={game.status} />
+          <AdminControls
+            gameId={gameId}
+            groupId={groupId}
+            gameStatus={game.status}
+            homeTeam={game.home_team}
+            awayTeam={game.away_team}
+            homeNumbers={game.home_numbers}
+            awayNumbers={game.away_numbers}
+          />
         )}
       </div>
 
@@ -66,6 +89,8 @@ export default async function GamePage({
               userEmail={user.email || ''}
               userName={profile?.full_name || undefined}
               initialGame={game as any}
+              isAdmin={isAdmin}
+              groupMembers={members || []}
             />
           )}
         </div>

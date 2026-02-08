@@ -95,3 +95,92 @@ export async function unclaimSquareAction(params: {
 
   return { success: true, message: 'Square unclaimed successfully' }
 }
+
+export async function adminAssignSquareAction(params: {
+  squareId: string
+  gameId: string
+  targetMemberId: string
+  expectedVersion: number
+}) {
+  // Get authenticated user
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, message: 'Not authenticated' }
+  }
+
+  // Use admin client
+  const adminClient = createAdminClient()
+
+  // Verify the current user is admin of the group
+  const { data: game } = await adminClient
+    .from('games')
+    .select('group_id, status')
+    .eq('id', params.gameId)
+    .single()
+
+  if (!game) {
+    return { success: false, message: 'Game not found' }
+  }
+
+  const { data: membership } = await adminClient
+    .from('group_members')
+    .select('role')
+    .eq('group_id', game.group_id)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership || membership.role !== 'admin') {
+    return { success: false, message: 'Only admins can assign squares' }
+  }
+
+  // Verify game is open
+  if (game.status !== 'open') {
+    return { success: false, message: 'Game must be open to assign squares' }
+  }
+
+  // Get target member details
+  const { data: targetMember } = await adminClient
+    .from('group_members')
+    .select('id, user_id, display_name')
+    .eq('id', params.targetMemberId)
+    .eq('group_id', game.group_id)
+    .single()
+
+  if (!targetMember) {
+    return { success: false, message: 'Target member not found in this group' }
+  }
+
+  // Get current square to check version
+  const { data: square } = await adminClient
+    .from('squares')
+    .select('version, user_id, display_name')
+    .eq('id', params.squareId)
+    .single()
+
+  if (!square) {
+    return { success: false, message: 'Square not found' }
+  }
+
+  if (square.version !== params.expectedVersion) {
+    return { success: false, message: 'Square was modified by another user. Please refresh.' }
+  }
+
+  // Assign the square (use user_id if available, otherwise display_name)
+  const { error } = await adminClient
+    .from('squares')
+    .update({
+      user_id: targetMember.user_id,
+      display_name: targetMember.display_name,
+      version: square.version + 1,
+    })
+    .eq('id', params.squareId)
+
+  if (error) {
+    console.error('Admin assign square error:', error)
+    return { success: false, message: error.message }
+  }
+
+  return { success: true, message: 'Square assigned successfully' }
+}

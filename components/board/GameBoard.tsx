@@ -5,13 +5,16 @@ import { createClient } from '@/lib/supabase/client'
 import { Square } from './Square'
 import { NumberRow } from './NumberRow'
 import { PresenceIndicator } from './PresenceIndicator'
+import { AdminSquareAssign } from './AdminSquareAssign'
 import { useRealtimeSquares } from '@/lib/hooks/useRealtime'
 import { useRealtimeGame } from '@/lib/hooks/useRealtimeGame'
-import { claimSquareAction, unclaimSquareAction } from '@/app/actions/squares'
+import { claimSquareAction, unclaimSquareAction, adminAssignSquareAction } from '@/app/actions/squares'
 // import { usePresence } from '@/lib/hooks/usePresence'
 import { Database } from '@/types/database.types'
+import { Settings } from 'lucide-react'
 
 type SquareData = Database['public']['Tables']['squares']['Row'] & {
+  display_name?: string | null
   profiles?: {
     full_name: string | null
     email: string
@@ -28,26 +31,40 @@ interface QuarterWinner {
   quarter: string
 }
 
+interface Member {
+  id: string
+  user_id: string
+  profiles: {
+    id: string
+    email: string
+    full_name: string | null
+  }
+}
+
 interface GameBoardProps {
   gameId: string
   userId: string
   userEmail: string
   userName?: string
   initialGame?: GameData
+  isAdmin?: boolean
+  groupMembers?: Member[]
 }
 
-export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: GameBoardProps) {
+export function GameBoard({ gameId, userId, userEmail, userName, initialGame, isAdmin = false, groupMembers = [] }: GameBoardProps) {
   const [squares, setSquares] = useState<SquareData[]>([])
   const [game, setGame] = useState<GameData | null>(initialGame || null)
   const [quarterWinners, setQuarterWinners] = useState<QuarterWinner[]>([])
   const [loading, setLoading] = useState(true)
+  const [adminMode, setAdminMode] = useState(false)
+  const [selectedSquare, setSelectedSquare] = useState<{ id: string; position: string; version: number } | null>(null)
   const supabase = createClient()
 
   const fetchData = useCallback(async () => {
     const [squaresResult, gameResult, winnersResult] = await Promise.all([
       supabase
         .from('squares')
-        .select('*, profiles(full_name, email)')
+        .select('*, display_name, profiles(full_name, email)')
         .eq('game_id', gameId)
         .order('row')
         .order('col'),
@@ -97,6 +114,16 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
       return
     }
 
+    // If in admin mode, show member selector
+    if (adminMode && isAdmin) {
+      setSelectedSquare({
+        id: squareId,
+        position: `${row},${col}`,
+        version: currentVersion,
+      })
+      return
+    }
+
     // Check if user is unclaiming their own square
     if (isOwner) {
       // Optimistic update - unclaim
@@ -142,6 +169,43 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
     }
   }
 
+  async function handleAdminAssign(targetMemberId: string) {
+    if (!selectedSquare) return
+
+    // Find target member for optimistic update
+    const targetMember = groupMembers.find(m => m.id === targetMemberId)
+
+    // Optimistic update
+    setSquares(prev => prev.map(sq =>
+      sq.id === selectedSquare.id
+        ? {
+            ...sq,
+            user_id: targetMember?.user_id || null,
+            display_name: (targetMember as any)?.display_name || null,
+            profiles: targetMember?.profiles ? {
+              full_name: targetMember.profiles.full_name,
+              email: targetMember.profiles.email
+            } : null
+          }
+        : sq
+    ))
+
+    const result = await adminAssignSquareAction({
+      squareId: selectedSquare.id,
+      gameId,
+      targetMemberId,
+      expectedVersion: selectedSquare.version,
+    })
+
+    if (!result.success) {
+      // Revert optimistic update
+      await fetchData()
+      alert(result.message || 'Failed to assign square')
+    }
+
+    setSelectedSquare(null)
+  }
+
   // Calculate current winner based on live scores
   const getCurrentWinningSquare = useCallback(() => {
     if (!game?.home_numbers || !game?.away_numbers || !game.home_score !== undefined || !game.away_score !== undefined) {
@@ -177,6 +241,28 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
 
   return (
     <div className="space-y-6">
+      {isAdmin && game?.status === 'open' && (
+        <div className="flex items-center justify-between bg-card p-4 rounded-xl border-2 border-border">
+          <div>
+            <h3 className="font-medium text-white">Admin Mode</h3>
+            <p className="text-xs text-gray-400 mt-1">
+              {adminMode ? 'Click any square to assign it to a member' : 'Toggle to assign squares to members'}
+            </p>
+          </div>
+          <button
+            onClick={() => setAdminMode(!adminMode)}
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-all ${
+              adminMode
+                ? 'bg-primary-green/20 border-2 border-primary-green text-primary-green'
+                : 'bg-card-hover border-2 border-border text-gray-300 hover:border-primary-blue'
+            }`}
+          >
+            <Settings className="w-4 h-4" />
+            {adminMode ? 'Exit Admin Mode' : 'Enter Admin Mode'}
+          </button>
+        </div>
+      )}
+
       <PresenceIndicator users={onlineUsers} />
 
       <div className="overflow-x-auto">
@@ -206,13 +292,18 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
                 const isCurrent = currentWinningSquareId === square.id
                 const isOwner = square.user_id === userId
 
+                // In admin mode, any square is clickable
+                const canClick = adminMode
+                  ? game?.status === 'open'
+                  : ((!square.user_id || isOwner) && game?.status === 'open')
+
                 return (
                   <Square
                     key={square.id}
                     square={square}
                     onClick={() => handleSquareClick(square.id, row, col, square.version, isOwner)}
                     isOwner={isOwner}
-                    canClaim={((!square.user_id || isOwner) && game?.status === 'open')}
+                    canClaim={canClick}
                     wonQuarters={wonQuarters}
                     isCurrentWinner={isCurrent}
                   />
@@ -232,6 +323,16 @@ export function GameBoard({ gameId, userId, userEmail, userName, initialGame }: 
           <span className="font-medium text-primary-blue">→ Horizontal:</span> {game?.away_team}
         </div>
       </div>
+
+      {/* Admin square assignment modal */}
+      {selectedSquare && (
+        <AdminSquareAssign
+          members={groupMembers}
+          onAssign={handleAdminAssign}
+          onCancel={() => setSelectedSquare(null)}
+          squarePosition={selectedSquare.position}
+        />
+      )}
     </div>
   )
 }

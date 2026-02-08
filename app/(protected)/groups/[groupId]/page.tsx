@@ -5,6 +5,8 @@ import { PaymentStatus } from '@/components/groups/PaymentStatus'
 import { GroupInfo } from '@/components/groups/GroupInfo'
 import { DeleteGroupButton } from '@/components/groups/DeleteGroupButton'
 import { LeaveGroupButton } from '@/components/groups/LeaveGroupButton'
+import { AddMemberDialog } from '@/components/groups/AddMemberDialog'
+import { ClaimMemberButton } from '@/components/groups/ClaimMemberButton'
 import Link from 'next/link'
 
 export default async function GroupPage({ params }: { params: Promise<{ groupId: string }> }) {
@@ -32,12 +34,13 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
     .eq('group_id', groupId)
     .order('created_at', { ascending: false })
 
-  // Count total squares sold across all games in this group
+  // Count total squares claimed across all games (user_id OR display_name)
+  const gameIds = games?.map(g => g.id) || []
   const { count: totalSquaresSold } = await supabase
     .from('squares')
     .select('*', { count: 'exact', head: true })
-    .not('user_id', 'is', null)
-    .in('game_id', games?.map(g => g.id) || [])
+    .or('user_id.not.is.null,display_name.not.is.null')
+    .in('game_id', gameIds)
 
   const { data: { user } } = await supabase.auth.getUser()
   const userMember = members?.find(m => m.user_id === user?.id)
@@ -117,25 +120,42 @@ export default async function GroupPage({ params }: { params: Promise<{ groupId:
 
           <PaymentStatus
             groupId={groupId}
+            gameIds={gameIds}
             isAdmin={isAdmin}
             buyInAmount={group.buy_in_amount || 0}
           />
 
           <div className="bg-card p-6 rounded-xl border-2 border-border shadow-card-glow">
-            <h3 className="font-bold text-lg text-primary-blue mb-4">Members ({members?.length || 0})</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-lg text-primary-blue">Members ({members?.length || 0})</h3>
+              {isAdmin && <AddMemberDialog groupId={groupId} />}
+            </div>
             <div className="space-y-3">
-              {members?.map(member => (
-                <div key={member.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
-                  <div>
-                    <p className="font-medium text-white">
-                      {member.profiles?.full_name || member.profiles?.email}
-                    </p>
-                    {member.role === 'admin' && (
-                      <span className="text-xs text-primary-green font-bold">Admin</span>
+              {members?.map(member => {
+                const isUnclaimed = !member.user_id && (member as any).display_name
+                return (
+                  <div key={member.id} className="flex items-center justify-between py-2 border-b border-border last:border-0">
+                    <div>
+                      <p className="font-medium text-white">
+                        {(member as any).display_name || member.profiles?.full_name || member.profiles?.email || 'Unknown'}
+                        {isUnclaimed && (
+                          <span className="text-xs text-yellow-400 ml-2">(unclaimed)</span>
+                        )}
+                      </p>
+                      {member.role === 'admin' && (
+                        <span className="text-xs text-primary-green font-bold">Admin</span>
+                      )}
+                    </div>
+                    {isUnclaimed && (
+                      <ClaimMemberButton
+                        groupId={groupId}
+                        memberId={member.id}
+                        displayName={(member as any).display_name}
+                      />
                     )}
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </div>
         </div>

@@ -8,6 +8,7 @@ interface SquareProps {
   square: {
     id: string
     user_id: string | null
+    display_name?: string | null
     profiles?: {
       full_name: string | null
       email: string
@@ -20,7 +21,8 @@ interface SquareProps {
   isCurrentWinner?: boolean
 }
 
-function getInitials(fullName: string | null, email: string): string {
+function getInitials(fullName: string | null, email: string | null, displayName?: string | null): string {
+  // First try to get initials from full name
   if (fullName) {
     const nameParts = fullName.trim().split(' ').filter(Boolean)
     if (nameParts.length >= 2) {
@@ -28,7 +30,22 @@ function getInitials(fullName: string | null, email: string): string {
     }
     return nameParts[0][0].toUpperCase()
   }
-  return email[0].toUpperCase()
+
+  // Then try display name (for name-only members)
+  if (displayName) {
+    const nameParts = displayName.trim().split(' ').filter(Boolean)
+    if (nameParts.length >= 2) {
+      return (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase()
+    }
+    return nameParts[0][0].toUpperCase()
+  }
+
+  // Finally fall back to email if available
+  if (email) {
+    return email[0].toUpperCase()
+  }
+
+  return '?'
 }
 
 export function Square({
@@ -40,14 +57,22 @@ export function Square({
   isCurrentWinner = false
 }: SquareProps) {
   const [showTooltip, setShowTooltip] = useState(false)
-  const displayName = square.profiles?.full_name || square.profiles?.email?.split('@')[0] || ''
-  const initials = square.profiles
-    ? getInitials(square.profiles.full_name, square.profiles.email)
+
+  // Display name: use profile full_name, or display_name, or email
+  const displayName = square.profiles?.full_name || square.display_name || square.profiles?.email?.split('@')[0] || ''
+
+  // Get initials from any available name source
+  const initials = (square.profiles || square.display_name)
+    ? getInitials(square.profiles?.full_name || null, square.profiles?.email || null, square.display_name)
     : ''
+
+  // Tooltip text: show full name/email for authenticated users, display_name for name-only members
   const tooltipText = square.user_id
     ? `${square.profiles?.full_name || square.profiles?.email || 'Unknown'}`
-    : ''
-  const hasOwner = square.user_id !== null
+    : square.display_name || ''
+
+  // Square has an owner if either user_id or display_name is set
+  const hasOwner = square.user_id !== null || !!square.display_name
 
   function handleClick(e: React.MouseEvent) {
     if (canClaim) {

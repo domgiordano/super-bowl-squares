@@ -125,3 +125,214 @@ export async function createGroupAction(formData: {
 
   return { success: true, groupId: group.id }
 }
+
+export async function addMemberToGroupAction(params: {
+  groupId: string
+  name: string
+}) {
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, message: 'Not authenticated' }
+  }
+
+  // Verify user is admin of this group
+  const { data: membership } = await supabase
+    .from('group_members')
+    .select('role')
+    .eq('group_id', params.groupId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (!membership || membership.role !== 'admin') {
+    return { success: false, message: 'Only admins can add members' }
+  }
+
+  const adminClient = createAdminClient()
+  const trimmedName = params.name.trim()
+
+  if (!trimmedName) {
+    return { success: false, message: 'Name cannot be empty' }
+  }
+
+  // Check if a member with this display name already exists in the group
+  const { data: existingMember } = await adminClient
+    .from('group_members')
+    .select('id')
+    .eq('group_id', params.groupId)
+    .eq('display_name', trimmedName)
+    .single()
+
+  if (existingMember) {
+    return { success: false, message: 'A member with this name already exists in the group' }
+  }
+
+  // Add name-only member to group (no user_id)
+  const { error: insertError } = await adminClient
+    .from('group_members')
+    .insert({
+      group_id: params.groupId,
+      user_id: null,
+      display_name: trimmedName,
+      role: 'member',
+    })
+
+  if (insertError) {
+    console.error('Add member error:', insertError)
+    return { success: false, message: insertError.message }
+  }
+
+  revalidatePath(`/groups/${params.groupId}`)
+  return {
+    success: true,
+    message: `${trimmedName} added to group`
+  }
+}
+
+export async function claimIdentityAction(params: {
+  groupId: string
+  memberId: string
+}) {
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, message: 'Not authenticated' }
+  }
+
+  const adminClient = createAdminClient()
+
+  // Get the target unclaimed member
+  const { data: targetMember } = await adminClient
+    .from('group_members')
+    .select('id, display_name, user_id')
+    .eq('id', params.memberId)
+    .eq('group_id', params.groupId)
+    .single()
+
+  if (!targetMember) {
+    return { success: false, message: 'Member not found in this group' }
+  }
+
+  if (targetMember.user_id) {
+    return { success: false, message: 'This identity has already been claimed' }
+  }
+
+  const displayName = targetMember.display_name
+
+  // Check if the user already has their own membership in this group
+  const { data: existingMembership } = await adminClient
+    .from('group_members')
+    .select('id')
+    .eq('group_id', params.groupId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (existingMembership) {
+    // User is already a member — merge: transfer squares/payments, then delete the unclaimed record
+  } else {
+    // User is not a member yet — link the unclaimed record to them
+    const { error: memberError } = await adminClient
+      .from('group_members')
+      .update({ user_id: user.id })
+      .eq('id', params.memberId)
+
+    if (memberError) {
+      console.error('Claim identity - member update error:', memberError)
+      return { success: false, message: memberError.message }
+    }
+  }
+
+  // Transfer all squares with this display_name in the group's games
+  const { data: games } = await adminClient
+    .from('games')
+    .select('id')
+    .eq('group_id', params.groupId)
+
+  if (games && games.length > 0) {
+    const gameIds = games.map(g => g.id)
+    const { error: squaresError } = await adminClient
+      .from('squares')
+      .update({ user_id: user.id })
+      .in('game_id', gameIds)
+      .eq('display_name', displayName)
+
+    if (squaresError) {
+      console.error('Claim identity - squares transfer error:', squaresError)
+    }
+  }
+
+  // Transfer payment records (delete display_name record since user may already have one)
+  if (existingMembership) {
+    // User already has a membership — just delete the orphaned display_name payment record
+    await adminClient
+      .from('user_payments')
+      .delete()
+      .eq('group_id', params.groupId)
+      .eq('display_name', displayName)
+
+    // Delete the unclaimed member record (user already has their own)
+    await adminClient
+      .from('group_members')
+      .delete()
+      .eq('id', params.memberId)
+  } else {
+    // User claimed the record — update payment to their user_id
+    const { error: paymentError } = await adminClient
+      .from('user_payments')
+      .update({ user_id: user.id })
+      .eq('group_id', params.groupId)
+      .eq('display_name', displayName)
+
+    if (paymentError) {
+      console.error('Claim identity - payment transfer error:', paymentError)
+    }
+  }
+
+  revalidatePath(`/groups/${params.groupId}`)
+  revalidatePath('/dashboard')
+  return { success: true, message: 'Identity claimed successfully' }
+}
+
+export async function joinGroupAsNewMemberAction(params: {
+  groupId: string
+}) {
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  if (!user) {
+    return { success: false, message: 'Not authenticated' }
+  }
+
+  const adminClient = createAdminClient()
+
+  // Check the user isn't already a member
+  const { data: existingMembership } = await adminClient
+    .from('group_members')
+    .select('id')
+    .eq('group_id', params.groupId)
+    .eq('user_id', user.id)
+    .single()
+
+  if (existingMembership) {
+    return { success: false, message: 'You are already a member of this group' }
+  }
+
+  const { error } = await adminClient
+    .from('group_members')
+    .insert({
+      group_id: params.groupId,
+      user_id: user.id,
+      role: 'member',
+    })
+
+  if (error) {
+    console.error('Join group error:', error)
+    return { success: false, message: error.message }
+  }
+
+  revalidatePath(`/groups/${params.groupId}`)
+  revalidatePath('/dashboard')
+  return { success: true, message: 'Joined group successfully' }
+}
